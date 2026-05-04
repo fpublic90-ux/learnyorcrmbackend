@@ -190,6 +190,31 @@ app.get('/auth/verify', protect, (req, res) => {
   res.json(req.user);
 });
 
+// Update Profile
+app.put('/auth/profile', protect, async (req, res) => {
+  try {
+    const user = await User.findById(req.user._id);
+    if (user) {
+      user.name = req.body.name || user.name;
+      user.email = req.body.email || user.email;
+      if (req.body.password) {
+        user.password = await bcrypt.hash(req.body.password, 10);
+      }
+      const updatedUser = await user.save();
+      res.json({
+        _id: updatedUser._id,
+        name: updatedUser.name,
+        email: updatedUser.email,
+        token: jwt.sign({ id: updatedUser._id }, JWT_SECRET, { expiresIn: '30d' })
+      });
+    } else {
+      res.status(404).json({ error: 'User not found' });
+    }
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 // Routes
 app.post('/upload', protect, upload.single('image'), (req, res) => {
   if (!req.file) return res.status(400).send('No file uploaded.');
