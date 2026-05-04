@@ -390,6 +390,27 @@ app.post('/attendance', protect, async (req, res) => {
   }
 });
 
+// --- System Recovery ---
+app.post('/system/restore', protect, async (req, res) => {
+  const { employees, interns, attendance } = req.body;
+  
+  try {
+    // 1. Clear existing data (CAUTION: Production wipe)
+    await Employee.deleteMany({});
+    await Intern.deleteMany({});
+    await Attendance.deleteMany({});
+
+    // 2. Insert backup data
+    if (employees) await Employee.insertMany(employees);
+    if (interns) await Intern.insertMany(interns);
+    if (attendance) await Attendance.insertMany(attendance);
+
+    res.json({ success: true, message: 'System restored successfully from backup' });
+  } catch (err) {
+    res.status(500).json({ error: 'Restore failed: ' + err.message });
+  }
+});
+
 app.listen(PORT, () => {
   console.log(`Learnyor Backend running at http://localhost:${PORT}`);
 });
