@@ -8,6 +8,9 @@ const fsSync = require('fs');
 const path = require('path');
 const multer = require('multer');
 
+const cloudinary = require('cloudinary').v2;
+const { CloudinaryStorage } = require('multer-storage-cloudinary');
+
 const app = express();
 const PORT = process.env.PORT || 3000;
 
@@ -15,6 +18,13 @@ const PORT = process.env.PORT || 3000;
 mongoose.connect(process.env.MONGODB_URI)
   .then(() => console.log('Connected to MongoDB Atlas'))
   .catch(err => console.error('MongoDB connection error:', err));
+
+// Cloudinary Configuration
+cloudinary.config({
+  cloud_name: process.env.CLOUDINARY_CLOUD_NAME,
+  api_key: process.env.CLOUDINARY_API_KEY,
+  api_secret: process.env.CLOUDINARY_API_SECRET
+});
 
 // Schemas
 const employeeSchema = new mongoose.Schema({
@@ -59,17 +69,14 @@ const Employee = mongoose.model('Employee', employeeSchema);
 const Intern = mongoose.model('Intern', internSchema);
 const Attendance = mongoose.model('Attendance', attendanceSchema);
 
-// File Upload Setup
-const storage = multer.diskStorage({
-  destination: (req, file, cb) => {
-    const dir = path.join(__dirname, 'uploads');
-    if (!fsSync.existsSync(dir)) fsSync.mkdirSync(dir);
-    cb(null, dir);
+// Cloudinary Storage Setup
+const storage = new CloudinaryStorage({
+  cloudinary: cloudinary,
+  params: {
+    folder: 'learnyor_crm',
+    allowed_formats: ['jpg', 'png', 'jpeg', 'webp'],
+    transformation: [{ width: 500, height: 500, crop: 'limit' }]
   },
-  filename: (req, file, cb) => {
-    const ext = path.extname(file.originalname);
-    cb(null, Date.now() + ext);
-  }
 });
 const upload = multer({ storage: storage });
 
@@ -83,21 +90,35 @@ app.use(bodyParser.json());
 app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
 
 const deleteImage = async (imageUrl) => {
-  if (imageUrl && imageUrl.startsWith('/uploads/')) {
-    const filename = path.basename(imageUrl);
-    const filePath = path.join(__dirname, 'uploads', filename);
-    try {
+  if (!imageUrl) return;
+
+  try {
+    if (imageUrl.includes('cloudinary.com')) {
+      // Extract public_id from Cloudinary URL
+      // Example: https://res.cloudinary.com/name/image/upload/v1/folder/id.jpg
+      const parts = imageUrl.split('/');
+      const filename = parts.pop(); // id.jpg
+      const folder = parts.pop(); // folder
+      const publicId = `${folder}/${filename.split('.')[0]}`; // folder/id
+      
+      await cloudinary.uploader.destroy(publicId);
+      console.log('Cloudinary image deleted:', publicId);
+    } else if (imageUrl.startsWith('/uploads/')) {
+      const filename = path.basename(imageUrl);
+      const filePath = path.join(__dirname, 'uploads', filename);
       await fs.unlink(filePath);
-    } catch (e) {
-      console.error('Error deleting image:', e.message);
+      console.log('Local image deleted:', filename);
     }
+  } catch (e) {
+    console.error('Error deleting image:', e.message);
   }
 };
 
 // Routes
 app.post('/upload', upload.single('image'), (req, res) => {
   if (!req.file) return res.status(400).send('No file uploaded.');
-  const imageUrl = `/uploads/${req.file.filename}`;
+  // req.file.path contains the full secure URL from Cloudinary
+  const imageUrl = req.file.path; 
   res.json({ imageUrl });
 });
 
