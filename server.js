@@ -12,8 +12,13 @@ const jwt = require('jsonwebtoken');
 
 const cloudinary = require('cloudinary').v2;
 const { CloudinaryStorage } = require('multer-storage-cloudinary');
+const compression = require('compression');
+const rateLimit = require('express-rate-limit');
+const morgan = require('morgan');
 
 const app = express();
+app.use(compression()); // Compress all responses
+app.use(morgan('dev')); // Log requests for debugging
 const PORT = process.env.PORT || 3000;
 const JWT_SECRET = process.env.JWT_SECRET || 'learnyor_secret_key_2026';
 
@@ -66,9 +71,17 @@ const attendanceSchema = new mongoose.Schema({
   type: String // employee, intern
 });
 
+const companySchema = new mongoose.Schema({
+  name: { type: String, default: 'Learnyor CRM' },
+  logoUrl: String,
+  primaryColor: { type: String, default: '#2A5C82' },
+  secondaryColor: { type: String, default: '#4B79A1' }
+});
+
 const Employee = mongoose.model('Employee', employeeSchema);
 const Intern = mongoose.model('Intern', internSchema);
 const Attendance = mongoose.model('Attendance', attendanceSchema);
+const Company = mongoose.model('Company', companySchema);
 
 const userSchema = new mongoose.Schema({
   email: { type: String, required: true, unique: true },
@@ -144,8 +157,14 @@ const deleteImage = async (imageUrl) => {
 
 // --- Auth Routes ---
 
+const authLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000, // 15 minutes
+  max: 10, // Limit each IP to 10 login attempts per window
+  message: { error: 'Too many login attempts, please try again after 15 minutes' }
+});
+
 // Login
-app.post('/auth/login', async (req, res) => {
+app.post('/auth/login', authLimiter, async (req, res) => {
   const { email, password } = req.body;
   try {
     const user = await User.findOne({ email });
@@ -165,7 +184,7 @@ app.post('/auth/login', async (req, res) => {
 });
 
 // Register (One-time use to create admin)
-app.post('/auth/register', async (req, res) => {
+app.post('/auth/register', authLimiter, async (req, res) => {
   const { email, password, name } = req.body;
   try {
     const userExists = await User.findOne({ email });
@@ -190,26 +209,65 @@ app.get('/auth/verify', protect, (req, res) => {
   res.json(req.user);
 });
 
-// Update Profile
+// Update Profile (Name & Password)
 app.put('/auth/profile', protect, async (req, res) => {
   try {
     const user = await User.findById(req.user._id);
-    if (user) {
-      user.name = req.body.name || user.name;
-      user.email = req.body.email || user.email;
-      if (req.body.password) {
-        user.password = await bcrypt.hash(req.body.password, 10);
-      }
-      const updatedUser = await user.save();
-      res.json({
-        _id: updatedUser._id,
-        name: updatedUser.name,
-        email: updatedUser.email,
-        token: jwt.sign({ id: updatedUser._id }, JWT_SECRET, { expiresIn: '30d' })
-      });
-    } else {
-      res.status(404).json({ error: 'User not found' });
+    if (!user) return res.status(404).json({ error: 'User not found' });
+
+    // Update name if provided
+    user.name = req.body.name || user.name;
+    user.email = req.body.email || user.email;
+
+    // Password change logic
+    if (req.body.newPassword) {
+      // Verify old password first
+      const isMatch = await bcrypt.compare(req.body.oldPassword, user.password);
+      if (!isMatch) return res.status(400).json({ error: 'Incorrect current password' });
+
+      user.password = await bcrypt.hash(req.body.newPassword, 10);
     }
+
+    const updatedUser = await user.save();
+    res.json({
+      _id: updatedUser._id,
+      name: updatedUser.name,
+      email: updatedUser.email,
+      token: jwt.sign({ id: updatedUser._id }, JWT_SECRET, { expiresIn: '30d' })
+    });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// --- Branding Routes ---
+
+// Get Company Info
+app.get('/company', async (req, res) => {
+  try {
+    let company = await Company.findOne();
+    if (!company) {
+      company = await Company.create({ name: 'Learnyor CRM' });
+    }
+    res.json(company);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Update Company Info
+app.put('/company', protect, async (req, res) => {
+  try {
+    let company = await Company.findOne();
+    if (!company) company = new Company();
+
+    company.name = req.body.name || company.name;
+    company.logoUrl = req.body.logoUrl || company.logoUrl;
+    company.primaryColor = req.body.primaryColor || company.primaryColor;
+    company.secondaryColor = req.body.secondaryColor || company.secondaryColor;
+
+    const updatedCompany = await company.save();
+    res.json(updatedCompany);
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
