@@ -7,12 +7,15 @@ const fs = require('fs').promises;
 const fsSync = require('fs');
 const path = require('path');
 const multer = require('multer');
+const bcrypt = require('bcryptjs');
+const jwt = require('jsonwebtoken');
 
 const cloudinary = require('cloudinary').v2;
 const { CloudinaryStorage } = require('multer-storage-cloudinary');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
+const JWT_SECRET = process.env.JWT_SECRET || 'learnyor_secret_key_2026';
 
 // MongoDB Connection
 mongoose.connect(process.env.MONGODB_URI)
@@ -67,6 +70,33 @@ const Employee = mongoose.model('Employee', employeeSchema);
 const Intern = mongoose.model('Intern', internSchema);
 const Attendance = mongoose.model('Attendance', attendanceSchema);
 
+const userSchema = new mongoose.Schema({
+  email: { type: String, required: true, unique: true },
+  password: { type: String, required: true },
+  name: { type: String, default: 'Admin' }
+});
+
+const User = mongoose.model('User', userSchema);
+
+// Middleware: Protect Routes
+const protect = async (req, res, next) => {
+  let token;
+  if (req.headers.authorization && req.headers.authorization.startsWith('Bearer')) {
+    try {
+      token = req.headers.authorization.split(' ')[1];
+      const decoded = jwt.verify(token, JWT_SECRET);
+      req.user = await User.findById(decoded.id).select('-password');
+      next();
+    } catch (error) {
+      res.status(401).json({ error: 'Not authorized, token failed' });
+    }
+  }
+
+  if (!token) {
+    res.status(401).json({ error: 'Not authorized, no token' });
+  }
+};
+
 // Cloudinary Storage Setup
 const storage = new CloudinaryStorage({
   cloudinary: cloudinary,
@@ -112,8 +142,59 @@ const deleteImage = async (imageUrl) => {
   }
 };
 
+  }
+};
+
+// --- Auth Routes ---
+
+// Login
+app.post('/auth/login', async (req, res) => {
+  const { email, password } = req.body;
+  try {
+    const user = await User.findOne({ email });
+    if (user && (await bcrypt.compare(password, user.password))) {
+      res.json({
+        _id: user._id,
+        name: user.name,
+        email: user.email,
+        token: jwt.sign({ id: user._id }, JWT_SECRET, { expiresIn: '30d' })
+      });
+    } else {
+      res.status(401).json({ error: 'Invalid email or password' });
+    }
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Register (One-time use to create admin)
+app.post('/auth/register', async (req, res) => {
+  const { email, password, name } = req.body;
+  try {
+    const userExists = await User.findOne({ email });
+    if (userExists) return res.status(400).json({ error: 'User already exists' });
+
+    const hashedPassword = await bcrypt.hash(password, 10);
+    const user = await User.create({ email, password: hashedPassword, name });
+    
+    res.status(201).json({
+      _id: user._id,
+      name: user.name,
+      email: user.email,
+      token: jwt.sign({ id: user._id }, JWT_SECRET, { expiresIn: '30d' })
+    });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Verify Token
+app.get('/auth/verify', protect, (req, res) => {
+  res.json(req.user);
+});
+
 // Routes
-app.post('/upload', upload.single('image'), (req, res) => {
+app.post('/upload', protect, upload.single('image'), (req, res) => {
   if (!req.file) return res.status(400).send('No file uploaded.');
   // req.file.path contains the full secure URL from Cloudinary
   const imageUrl = req.file.path; 
@@ -121,7 +202,7 @@ app.post('/upload', upload.single('image'), (req, res) => {
 });
 
 // Employee Endpoints
-app.get('/employees', async (req, res) => {
+app.get('/employees', protect, async (req, res) => {
   try {
     const employees = await Employee.find();
     res.json(employees);
@@ -130,7 +211,7 @@ app.get('/employees', async (req, res) => {
   }
 });
 
-app.post('/employees', async (req, res) => {
+app.post('/employees', protect, async (req, res) => {
   try {
     const employeeData = { ...req.body };
     delete employeeData._id;
@@ -147,7 +228,7 @@ app.post('/employees', async (req, res) => {
   }
 });
 
-app.delete('/employees/:id', async (req, res) => {
+app.delete('/employees/:id', protect, async (req, res) => {
   try {
     const employee = await Employee.findOne({ id: req.params.id });
     if (employee) await deleteImage(employee.photoUrl);
@@ -159,7 +240,7 @@ app.delete('/employees/:id', async (req, res) => {
 });
 
 // Intern Endpoints
-app.get('/interns', async (req, res) => {
+app.get('/interns', protect, async (req, res) => {
   try {
     const interns = await Intern.find();
     res.json(interns);
@@ -168,7 +249,7 @@ app.get('/interns', async (req, res) => {
   }
 });
 
-app.post('/interns', async (req, res) => {
+app.post('/interns', protect, async (req, res) => {
   try {
     const internData = { ...req.body };
     delete internData._id;
@@ -185,7 +266,7 @@ app.post('/interns', async (req, res) => {
   }
 });
 
-app.delete('/interns/:id', async (req, res) => {
+app.delete('/interns/:id', protect, async (req, res) => {
   try {
     const intern = await Intern.findOne({ id: req.params.id });
     if (intern) await deleteImage(intern.photoUrl);
@@ -197,7 +278,7 @@ app.delete('/interns/:id', async (req, res) => {
 });
 
 // Attendance Endpoints
-app.get('/attendance', async (req, res) => {
+app.get('/attendance', protect, async (req, res) => {
   try {
     const records = await Attendance.find();
     res.json(records);
@@ -206,7 +287,7 @@ app.get('/attendance', async (req, res) => {
   }
 });
 
-app.post('/attendance', async (req, res) => {
+app.post('/attendance', protect, async (req, res) => {
   try {
     const record = req.body;
     const dateOnly = new Date(record.date);
