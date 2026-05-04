@@ -142,9 +142,6 @@ const deleteImage = async (imageUrl) => {
   }
 };
 
-  }
-};
-
 // --- Auth Routes ---
 
 // Login
