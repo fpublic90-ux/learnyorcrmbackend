@@ -227,9 +227,9 @@ app.get('/auth/verify', protect, (req, res) => {
 // Get all users (Admin only)
 app.get('/auth/users', protect, async (req, res) => {
   try {
-    // Only allow admin access
-    if (req.user.email !== 'jafarevx123@gmail.com') {
-      return res.status(403).json({ error: 'Access denied. Admins only.' });
+    // Only allow authorized administrator access
+    if (req.user.role !== 'admin') {
+      return res.status(403).json({ error: 'Administrative access required' });
     }
     const users = await User.find().select('-password');
     res.json(users);
