@@ -174,7 +174,7 @@ const deleteImage = async (imageUrl) => {
 
 const authLimiter = rateLimit({
   windowMs: 15 * 60 * 1000, // 15 minutes
-  max: 10, // Limit each IP to 10 login attempts per window
+  max: 50, // Increased limit for improved flexibility
   message: { error: 'Too many login attempts, please try again after 15 minutes' }
 });
 
