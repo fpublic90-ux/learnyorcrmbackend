@@ -188,6 +188,7 @@ app.post('/auth/login', authLimiter, async (req, res) => {
         _id: user._id,
         name: user.name,
         email: user.email,
+        role: user.role, // Explicit role propagation
         token: jwt.sign({ id: user._id }, JWT_SECRET, { expiresIn: '30d' })
       });
     } else {
@@ -212,6 +213,7 @@ app.post('/auth/register', authLimiter, async (req, res) => {
       _id: user._id,
       name: user.name,
       email: user.email,
+      role: user.role, // Explicit role propagation
       token: jwt.sign({ id: user._id }, JWT_SECRET, { expiresIn: '30d' })
     });
   } catch (err) {
