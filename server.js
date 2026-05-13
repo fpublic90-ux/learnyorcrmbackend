@@ -420,18 +420,33 @@ app.post('/attendance', protect, async (req, res) => {
 });
 
 // --- REPORTS ENDPOINTS ---
-app.get('/api/reports', async (req, res) => {
+app.get('/api/reports', protect, async (req, res) => {
   try {
-    const reports = await Report.find().sort({ date: -1 });
+    let query = {};
+    
+    // Privacy Logic: Only admins see everything. Staff/Interns see their own reports.
+    // staffId stores the email in our current implementation.
+    if (req.user.role !== 'admin') {
+      query = { staffId: req.user.email };
+    }
+
+    const reports = await Report.find(query).sort({ date: -1 });
     res.json(reports);
   } catch (err) {
     res.status(500).json({ message: err.message });
   }
 });
 
-app.post('/api/reports', async (req, res) => {
+app.post('/api/reports', protect, async (req, res) => {
   try {
-    const report = new Report(req.body);
+    const reportData = { ...req.body };
+    // Enforce current user identity for security
+    if (req.user.role !== 'admin') {
+      reportData.staffId = req.user.email;
+      reportData.staffName = req.user.name;
+    }
+    
+    const report = new Report(reportData);
     const newReport = await report.save();
     res.status(201).json(newReport);
   } catch (err) {
@@ -439,7 +454,7 @@ app.post('/api/reports', async (req, res) => {
   }
 });
 
-app.put('/api/reports/:id', async (req, res) => {
+app.put('/api/reports/:id', protect, async (req, res) => {
   try {
     const updatedReport = await Report.findOneAndUpdate({ id: req.params.id }, req.body, { new: true });
     res.json(updatedReport);
