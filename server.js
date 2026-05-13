@@ -113,7 +113,13 @@ const protect = async (req, res, next) => {
     try {
       token = req.headers.authorization.split(' ')[1];
       const decoded = jwt.verify(token, JWT_SECRET);
-      req.user = await User.findById(decoded.id).select('-password');
+      const user = await User.findById(decoded.id).select('-password');
+      
+      if (!user) {
+        return res.status(401).json({ error: 'User no longer exists' });
+      }
+      
+      req.user = user;
       next();
     } catch (error) {
       res.status(401).json({ error: 'Not authorized, token failed' });
@@ -230,7 +236,7 @@ app.get('/auth/verify', protect, (req, res) => {
 app.get('/auth/users', protect, async (req, res) => {
   try {
     // Only allow authorized administrator access
-    if (req.user.role !== 'admin') {
+    if (!req.user.role || req.user.role.toLowerCase() !== 'admin') {
       return res.status(403).json({ error: 'Administrative access required' });
     }
     const users = await User.find().select('-password');
@@ -427,8 +433,8 @@ app.get('/api/reports', protect, async (req, res) => {
     let query = {};
     
     // Privacy Logic: Only admins see everything. Staff/Interns see their own reports.
-    // staffId stores the email in our current implementation.
-    if (req.user.role !== 'admin') {
+    const isMainAdmin = req.user.role && req.user.role.toLowerCase() === 'admin';
+    if (!isMainAdmin) {
       query = { staffId: req.user.email };
     }
 
@@ -443,7 +449,8 @@ app.post('/api/reports', protect, async (req, res) => {
   try {
     const reportData = { ...req.body };
     // Enforce current user identity for security
-    if (req.user.role !== 'admin') {
+    const isMainAdmin = req.user.role && req.user.role.toLowerCase() === 'admin';
+    if (!isMainAdmin) {
       reportData.staffId = req.user.email;
       reportData.staffName = req.user.name;
     }
