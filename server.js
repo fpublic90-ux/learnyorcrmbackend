@@ -19,34 +19,6 @@ const morgan = require('morgan');
 const app = express();
 app.use(compression()); // Compress all responses
 app.use(morgan('dev')); // Log requests for debugging
-// --- REPORTS ENDPOINTS ---
-app.get('/api/reports', async (req, res) => {
-  try {
-    const reports = await Report.find().sort({ date: -1 });
-    res.json(reports);
-  } catch (err) {
-    res.status(500).json({ message: err.message });
-  }
-});
-
-app.post('/api/reports', async (req, res) => {
-  const report = new Report(req.body);
-  try {
-    const newReport = await report.save();
-    res.status(201).json(newReport);
-  } catch (err) {
-    res.status(400).json({ message: err.message });
-  }
-});
-
-app.put('/api/reports/:id', async (req, res) => {
-  try {
-    const updatedReport = await Report.findOneAndUpdate({ id: req.params.id }, req.body, { new: true });
-    res.json(updatedReport);
-  } catch (err) {
-    res.status(400).json({ message: err.message });
-  }
-});
 
 const PORT = process.env.PORT || 5000;
 const JWT_SECRET = process.env.JWT_SECRET || 'learnyor_secret_key_2026';
@@ -444,6 +416,35 @@ app.post('/attendance', protect, async (req, res) => {
     res.status(201).json(updatedRecord);
   } catch (err) {
     res.status(400).json({ error: err.message });
+  }
+});
+
+// --- REPORTS ENDPOINTS ---
+app.get('/api/reports', async (req, res) => {
+  try {
+    const reports = await Report.find().sort({ date: -1 });
+    res.json(reports);
+  } catch (err) {
+    res.status(500).json({ message: err.message });
+  }
+});
+
+app.post('/api/reports', async (req, res) => {
+  try {
+    const report = new Report(req.body);
+    const newReport = await report.save();
+    res.status(201).json(newReport);
+  } catch (err) {
+    res.status(400).json({ message: err.message });
+  }
+});
+
+app.put('/api/reports/:id', async (req, res) => {
+  try {
+    const updatedReport = await Report.findOneAndUpdate({ id: req.params.id }, req.body, { new: true });
+    res.json(updatedReport);
+  } catch (err) {
+    res.status(400).json({ message: err.message });
   }
 });
 
