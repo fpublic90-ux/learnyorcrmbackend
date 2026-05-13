@@ -86,7 +86,8 @@ const Company = mongoose.model('Company', companySchema);
 const userSchema = new mongoose.Schema({
   email: { type: String, required: true, unique: true },
   password: { type: String, required: true },
-  name: { type: String, default: 'Admin' }
+  name: { type: String, default: 'Admin' },
+  role: { type: String, default: 'employee' }
 });
 
 const User = mongoose.model('User', userSchema);
@@ -185,13 +186,13 @@ app.post('/auth/login', authLimiter, async (req, res) => {
 
 // Register (One-time use to create admin)
 app.post('/auth/register', authLimiter, async (req, res) => {
-  const { email, password, name } = req.body;
-  try {
-    const userExists = await User.findOne({ email });
-    if (userExists) return res.status(400).json({ error: 'User already exists' });
-
-    const hashedPassword = await bcrypt.hash(password, 10);
-    const user = await User.create({ email, password: hashedPassword, name });
+    const { email, password, name, role } = req.body;
+    try {
+      const userExists = await User.findOne({ email });
+      if (userExists) return res.status(400).json({ error: 'User already exists' });
+  
+      const hashedPassword = await bcrypt.hash(password, 10);
+      const user = await User.create({ email, password: hashedPassword, name, role: role || 'employee' });
     
     res.status(201).json({
       _id: user._id,
@@ -207,6 +208,20 @@ app.post('/auth/register', authLimiter, async (req, res) => {
 // Verify Token
 app.get('/auth/verify', protect, (req, res) => {
   res.json(req.user);
+});
+
+// Get all users (Admin only)
+app.get('/auth/users', protect, async (req, res) => {
+  try {
+    // Only allow admin access
+    if (req.user.email !== 'jafarevx123@gmail.com') {
+      return res.status(403).json({ error: 'Access denied. Admins only.' });
+    }
+    const users = await User.find().select('-password');
+    res.json(users);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
 });
 
 // Update Profile (Name & Password)
