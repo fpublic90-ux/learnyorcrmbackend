@@ -119,6 +119,25 @@ const leaveRequestSchema = new mongoose.Schema({
 
 const LeaveRequest = mongoose.model('LeaveRequest', leaveRequestSchema);
 
+const notificationSchema = new mongoose.Schema({
+  recipientEmail: { type: String, required: true }, // 'admin' or specific staff email
+  title: { type: String, required: true },
+  message: { type: String, required: true },
+  type: { type: String, enum: ['leave', 'report', 'system'], default: 'system' },
+  isRead: { type: Boolean, default: false }
+}, { timestamps: true });
+
+const Notification = mongoose.model('Notification', notificationSchema);
+
+const createNotification = async (recipient, title, message, type) => {
+  try {
+    await Notification.create({ recipientEmail: recipient, title, message, type });
+    console.log(`🔔 Signal Generated: [${type}] for ${recipient}`);
+  } catch (err) {
+    console.error('❌ Failed to generate signal:', err);
+  }
+};
+
 // Middleware: Protect Routes
 const protect = async (req, res, next) => {
   let token;
@@ -540,6 +559,10 @@ app.post('/api/reports', protect, async (req, res) => {
     
     const report = new Report(reportData);
     const newReport = await report.save();
+    
+    // Notify Admin
+    await createNotification('admin', 'New Work Log', `${reportData.staffName} submitted a new report`, 'report');
+    
     res.status(201).json(newReport);
   } catch (err) {
     res.status(400).json({ message: err.message });
@@ -549,6 +572,17 @@ app.post('/api/reports', protect, async (req, res) => {
 app.put('/api/reports/:id', protect, async (req, res) => {
   try {
     const updatedReport = await Report.findOneAndUpdate({ id: req.params.id }, req.body, { new: true });
+    
+    // Notify Staff if status was updated
+    if (req.body.status) {
+      await createNotification(
+        updatedReport.staffId, 
+        `Report ${req.body.status.toUpperCase()}`, 
+        `Your work log for ${new Date(updatedReport.date).toLocaleDateString()} has been ${req.body.status}`, 
+        'report'
+      );
+    }
+    
     res.json(updatedReport);
   } catch (err) {
     res.status(400).json({ message: err.message });
@@ -580,6 +614,10 @@ app.post('/api/leaves', protect, async (req, res) => {
     }
     const leave = new LeaveRequest(leaveData);
     const newLeave = await leave.save();
+    
+    // Notify Admin
+    await createNotification('admin', 'New Leave Request', `${leaveData.staffName} requested leave for ${new Date(leaveData.startDate).toLocaleDateString()}`, 'leave');
+    
     res.status(201).json(newLeave);
   } catch (err) {
     res.status(400).json({ message: err.message });
@@ -593,9 +631,56 @@ app.put('/api/leaves/:id', protect, async (req, res) => {
       return res.status(403).json({ error: 'Administrative access required to update status' });
     }
     const updatedLeave = await LeaveRequest.findOneAndUpdate({ id: req.params.id }, req.body, { new: true });
+    
+    // Notify Staff
+    if (req.body.status) {
+      await createNotification(
+        updatedLeave.staffId,
+        `Leave Request ${req.body.status.toUpperCase()}`,
+        `Your leave request starting ${new Date(updatedLeave.startDate).toLocaleDateString()} has been ${req.body.status}`,
+        'leave'
+      );
+    }
+    
     res.json(updatedLeave);
   } catch (err) {
     res.status(400).json({ message: err.message });
+  }
+});
+
+// --- NOTIFICATIONS ENDPOINTS ---
+app.get('/api/notifications', protect, async (req, res) => {
+  try {
+    const isAdmin = req.user.role && req.user.role.toLowerCase() === 'admin';
+    const recipient = isAdmin ? 'admin' : req.user.email;
+    
+    const notifications = await Notification.find({ recipientEmail: recipient })
+      .sort({ createdAt: -1 })
+      .limit(50);
+    res.json(notifications);
+  } catch (err) {
+    res.status(500).json({ message: err.message });
+  }
+});
+
+app.put('/api/notifications/:id/read', protect, async (req, res) => {
+  try {
+    await Notification.findByIdAndUpdate(req.params.id, { isRead: true });
+    res.json({ success: true });
+  } catch (err) {
+    res.status(500).json({ message: err.message });
+  }
+});
+
+app.put('/api/notifications/read-all', protect, async (req, res) => {
+  try {
+    const isAdmin = req.user.role && req.user.role.toLowerCase() === 'admin';
+    const recipient = isAdmin ? 'admin' : req.user.email;
+    
+    await Notification.updateMany({ recipientEmail: recipient }, { isRead: true });
+    res.json({ success: true });
+  } catch (err) {
+    res.status(500).json({ message: err.message });
   }
 });
 
