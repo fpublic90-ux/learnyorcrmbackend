@@ -213,18 +213,28 @@ app.post('/auth/login', authLimiter, async (req, res) => {
   }
 });
 
-// Register (One-time use to create admin)
+// Register (Auto-provisions professional profile)
 app.post('/auth/register', authLimiter, async (req, res) => {
-    const { email, password, name, role } = req.body;
-    try {
-      const userExists = await User.findOne({ email });
-      if (userExists) return res.status(400).json({ error: 'User already exists' });
-  
-      const hashedPassword = await bcrypt.hash(password, 10);
-      const user = await User.create({ email, password: hashedPassword, name, role: role || 'employee' });
-      
-      // Super-Admin Overrule
-      const finalRole = user.email === 'jafarevx123@gmail.com' ? 'admin' : user.role;
+  const { email, password, name, role } = req.body;
+  try {
+    const userExists = await User.findOne({ email });
+    if (userExists) return res.status(400).json({ error: 'User already exists' });
+
+    const hashedPassword = await bcrypt.hash(password, 10);
+    const user = await User.create({ email, password: hashedPassword, name, role: role || 'employee' });
+    
+    // Authoritative Profile Generation
+    const profileId = `ID-${Date.now()}`;
+    if (user.role === 'intern') {
+      await Intern.create({ id: profileId, name: user.name, email: user.email, status: 'ongoing' });
+      console.log(`Auto-Created Intern Profile for: ${user.email}`);
+    } else {
+      await Employee.create({ id: profileId, name: user.name, email: user.email, designation: 'Staff', status: 'active' });
+      console.log(`Auto-Created Employee Profile for: ${user.email}`);
+    }
+    
+    // Super-Admin Overrule
+    const finalRole = user.email === 'jafarevx123@gmail.com' ? 'admin' : user.role;
     
     res.status(201).json({
       _id: user._id,
@@ -329,30 +339,13 @@ app.post('/upload', protect, upload.single('image'), (req, res) => {
   res.json({ imageUrl });
 });
 
-// Employee Endpoints
+// Employee Endpoints (Retrieval & Deletion handled here, POST handled in Provisioning section below)
 app.get('/employees', protect, async (req, res) => {
   try {
     const employees = await Employee.find();
     res.json(employees);
   } catch (err) {
     res.status(500).json({ error: err.message });
-  }
-});
-
-app.post('/employees', protect, async (req, res) => {
-  try {
-    const employeeData = { ...req.body };
-    delete employeeData._id;
-    delete employeeData.__v;
-    
-    const employee = await Employee.findOneAndUpdate(
-      { id: employeeData.id },
-      employeeData,
-      { upsert: true, new: true }
-    );
-    res.status(201).json(employee);
-  } catch (err) {
-    res.status(400).json({ error: err.message });
   }
 });
 
@@ -374,23 +367,6 @@ app.get('/interns', protect, async (req, res) => {
     res.json(interns);
   } catch (err) {
     res.status(500).json({ error: err.message });
-  }
-});
-
-app.post('/interns', protect, async (req, res) => {
-  try {
-    const internData = { ...req.body };
-    delete internData._id;
-    delete internData.__v;
-
-    const intern = await Intern.findOneAndUpdate(
-      { id: internData.id },
-      internData,
-      { upsert: true, new: true }
-    );
-    res.status(201).json(intern);
-  } catch (err) {
-    res.status(400).json({ error: err.message });
   }
 });
 
