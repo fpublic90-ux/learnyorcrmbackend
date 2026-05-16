@@ -403,6 +403,8 @@ app.delete('/interns/:id', protect, async (req, res) => {
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
+});
+
 // Attendance Endpoints
 app.get('/attendance', protect, async (req, res) => {
   try {
