@@ -106,6 +106,19 @@ const reportSchema = new mongoose.Schema({
 
 const Report = mongoose.model('Report', reportSchema);
 
+const leaveRequestSchema = new mongoose.Schema({
+  id: String,
+  staffId: String,
+  staffName: String,
+  startDate: Date,
+  endDate: Date,
+  reason: String,
+  type: { type: String, enum: ['fullDay', 'halfDay'], default: 'fullDay' },
+  status: { type: String, enum: ['pending', 'approved', 'rejected'], default: 'pending' }
+}, { timestamps: true });
+
+const LeaveRequest = mongoose.model('LeaveRequest', leaveRequestSchema);
+
 // Middleware: Protect Routes
 const protect = async (req, res, next) => {
   let token;
@@ -537,6 +550,50 @@ app.put('/api/reports/:id', protect, async (req, res) => {
   try {
     const updatedReport = await Report.findOneAndUpdate({ id: req.params.id }, req.body, { new: true });
     res.json(updatedReport);
+  } catch (err) {
+    res.status(400).json({ message: err.message });
+  }
+});
+
+// --- LEAVE REQUESTS ENDPOINTS ---
+app.get('/api/leaves', protect, async (req, res) => {
+  try {
+    let query = {};
+    const isAdmin = req.user.role && req.user.role.toLowerCase() === 'admin';
+    if (!isAdmin) {
+      query = { staffId: req.user.email };
+    }
+    const leaves = await LeaveRequest.find(query).sort({ startDate: -1 });
+    res.json(leaves);
+  } catch (err) {
+    res.status(500).json({ message: err.message });
+  }
+});
+
+app.post('/api/leaves', protect, async (req, res) => {
+  try {
+    const leaveData = { ...req.body };
+    const isAdmin = req.user.role && req.user.role.toLowerCase() === 'admin';
+    if (!isAdmin) {
+      leaveData.staffId = req.user.email;
+      leaveData.staffName = req.user.name;
+    }
+    const leave = new LeaveRequest(leaveData);
+    const newLeave = await leave.save();
+    res.status(201).json(newLeave);
+  } catch (err) {
+    res.status(400).json({ message: err.message });
+  }
+});
+
+app.put('/api/leaves/:id', protect, async (req, res) => {
+  try {
+    // Only admins can update status
+    if (req.body.status && req.user.role !== 'admin') {
+      return res.status(403).json({ error: 'Administrative access required to update status' });
+    }
+    const updatedLeave = await LeaveRequest.findOneAndUpdate({ id: req.params.id }, req.body, { new: true });
+    res.json(updatedLeave);
   } catch (err) {
     res.status(400).json({ message: err.message });
   }
