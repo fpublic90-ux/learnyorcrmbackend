@@ -403,12 +403,21 @@ app.delete('/interns/:id', protect, async (req, res) => {
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
-});
-
 // Attendance Endpoints
 app.get('/attendance', protect, async (req, res) => {
   try {
-    const records = await Attendance.find();
+    let query = {};
+    const isAdmin = req.user.role && req.user.role.toLowerCase() === 'admin';
+    
+    if (!isAdmin) {
+      // Find the professional ID for this user
+      const emp = await Employee.findOne({ email: req.user.email });
+      const intern = await Intern.findOne({ email: req.user.email });
+      const personId = emp ? emp.id : (intern ? intern.id : 'NONE');
+      query = { personId };
+    }
+
+    const records = await Attendance.find(query);
     res.json(records);
   } catch (err) {
     res.status(500).json({ error: err.message });
@@ -433,6 +442,78 @@ app.post('/attendance', protect, async (req, res) => {
       { upsert: true, new: true }
     );
     res.status(201).json(updatedRecord);
+  } catch (err) {
+    res.status(400).json({ error: err.message });
+  }
+});
+
+// Admin User Management: Update Role
+app.put('/auth/users/:email/role', protect, async (req, res) => {
+  try {
+    if (req.user.role !== 'admin') return res.status(403).json({ error: 'Admin only' });
+    
+    const user = await User.findOne({ email: req.params.email });
+    if (!user) return res.status(404).json({ error: 'User not found' });
+    
+    user.role = req.body.role;
+    await user.save();
+    res.json({ success: true, role: user.role });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Helper for Auto-Identity
+async function provisionUser(data, role) {
+  const userExists = await User.findOne({ email: data.email });
+  if (!userExists) {
+    const hashedPassword = await bcrypt.hash('Learn@2026', 10);
+    await User.create({
+      email: data.email,
+      password: hashedPassword,
+      name: data.name,
+      role: role
+    });
+    console.log(`Auto-Provisioned User: ${data.email} as ${role}`);
+  }
+}
+
+// Updated Handlers
+app.post('/employees', protect, async (req, res) => {
+  try {
+    const employeeData = { ...req.body };
+    delete employeeData._id;
+    
+    const employee = await Employee.findOneAndUpdate(
+      { id: employeeData.id },
+      employeeData,
+      { upsert: true, new: true }
+    );
+    
+    // Auto-Provision Identity
+    await provisionUser(employeeData, 'employee');
+    
+    res.status(201).json(employee);
+  } catch (err) {
+    res.status(400).json({ error: err.message });
+  }
+});
+
+app.post('/interns', protect, async (req, res) => {
+  try {
+    const internData = { ...req.body };
+    delete internData._id;
+
+    const intern = await Intern.findOneAndUpdate(
+      { id: internData.id },
+      internData,
+      { upsert: true, new: true }
+    );
+    
+    // Auto-Provision Identity
+    await provisionUser(internData, 'intern');
+    
+    res.status(201).json(intern);
   } catch (err) {
     res.status(400).json({ error: err.message });
   }
