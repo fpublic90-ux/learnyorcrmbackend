@@ -648,6 +648,24 @@ app.put('/api/leaves/:id', protect, async (req, res) => {
   }
 });
 
+app.delete('/api/leaves/:id', protect, async (req, res) => {
+  try {
+    const leave = await LeaveRequest.findOne({ id: req.params.id });
+    if (!leave) return res.status(404).json({ error: 'Leave request not found' });
+    
+    const isAdmin = req.user.role && req.user.role.toLowerCase() === 'admin';
+    if (!isAdmin && leave.staffId !== req.user.email) {
+      return res.status(403).json({ error: 'Not authorized to cancel this request' });
+    }
+
+    await LeaveRequest.findOneAndDelete({ id: req.params.id });
+    res.json({ success: true, message: 'Leave request cancelled successfully' });
+  } catch (err) {
+    res.status(500).json({ message: err.message });
+  }
+});
+
+
 // --- NOTIFICATIONS ENDPOINTS ---
 app.get('/api/notifications', protect, async (req, res) => {
   try {
